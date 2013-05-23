@@ -1,0 +1,146 @@
+\documentclass{llncs}
+
+\usepackage{macros}
+\usepackage{lstcoq}
+\usepackage{lstocaml}
+\usepackage{mathpartir}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{stmaryrd}
+\usepackage{graphics}
+\usepackage{array}
+\bibliographystyle{plain}
+\pagestyle{plain}
+
+\title{Mechanizing small-inversions}
+% % \subtitlte{A new elimination tactic to rule them all}
+\author{Pierre Boutillier \and Thomas Braibant}
+\institute{Inria Paris Rocquencourt}
+\begin{document}
+\maketitle
+\begin{abstract}
+  Inductively defined relations are pervasives in the large scale
+  formalizations; and many proof steps require to invert an
+  hypothesis. Coq's built-in tactic ``inversion'' is made for this
+  purpose, but has severe usability and efficiency issues. 
+  
+  We propose a inversion tactic that mechanizes the ideas behind
+  the ``small inversions'' proof-trick \cite{monin} and argue that it
+  builds the right elimination principle.  
+\end{abstract}
+\section*{Introduction}
+
+An inductive definition is often presetend as a set of rules (called
+constructors). For example, let us define \coqe{even} by the rules
+\newcommand\even{\mathtt{even}}
+\begin{mathpar}
+\inferrule*[right=evenO] { }{\even~0}
+\and  
+\inferrule*[right=evenSS]{\even~n}{\even~(S~(S~n))}
+\end{mathpar}
+Any inhabitant of the type \coqe{even n} must be derivable from these
+rules. Inverting an element of an inductive definition is the process
+of finding the possible valid derivations of this element. 
+
+Suppose that we have an hypothesis \coqe{even (S x)} for some natural
+number \coqe{x}. Since \coqe{S x} cannot be equal to \coqe{0}, we see
+that the only rule that may have been apply is the constructor
+\texttt{evenSS} hence \coqe{x} is equal to some \coqe{S y} and
+\coqe{even y} holds. This corresponds exactly to a case analysis on
+the derivations of \coqe{even n} knowing that \coqe{n} must be
+matching the pattern \coqe{S x}. 
+
+This is conceptually simple, but the inversion algorithm~\cite{cornes}
+implemented in the \coqe{inversion} tactic in such a goal yields a
+contrived and big proof term. A concrete manifestation of this problem
+for the user is that the proof context becomes cluttered with
+seemingly useless equalities, that need to be substituted away by the
+user. The mantra \coqe{inversion H; clear H; subst} is both well-known
+and despised by long-time Coq users.
+ 
+Monin \cite{monin} described a new technique to build inversion
+principle that solves part of the problems of inversion. The idea is
+to use dependent pattern matching on the arguments of the inductive
+(\coqe{S x} in the above example) to rule out impossible cases, using
+a well-crafted ``diagonalization function'' (\coqe{diag} in the
+following). Then, this diagonalization function is used as a return
+clause in a case analysis on \coqe{H: even (S x)}. For example, if the
+conclusion of the proof goal is \coqe{even (pred x)}, we may build the
+proof term on Fig.\ref{fig:proof-term}. 
+
+\begin{figure}
+  \centering
+
+\begin{multicols}{2}
+\begin{coq}
+let diag n := 
+  match n return Prop with
+  | 0 => True
+  | S x =>  even (pred x)
+  end in
+match H as H' in even n' return diag n' 
+with 
+| eO => I  
+| eSS k Hk => _ : even (pred (S k)) end. 
+\end{coq}
+\end{multicols}
+\caption{Proof term for \coqe{even (S x) -> even (pred x)}}
+  \label{fig:proof-term}
+\end{figure}
+
+We will come back on the precise rules that define the typing of such
+dependent elimination in \secref{dependent-pattern-matching}; for the
+time being, let's just recall that the return clause %
+\coqe{as H' in even n' return diag n'} is a function that binds the arguments of
+the inductive (\coqe{S x} as \coqe{n'}), and \coqe{H'} of type
+\coqe{even n'}, and which body is the return part. Usually, the return
+part is a constant (e.g., \coqe{nat} for the match in the definition
+of \coqe{List.length}), but it is not mandatory. In the most general
+case, the body part may depend arbitrarily on the type of the
+discriminee.
+%
+Applying Coq's typing rules for the dependent elimination, we get the following types \begin{center}
+  \begin{tabular}{l@{\quad}cc}
+     & type & type (after reduction) \\
+     \hline
+    whole match 
+    & \lstinline[language=Coq, basicstyle=\normalsize]|diag (S x)| 
+    & \lstinline[language=Coq, basicstyle=\normalsize]|even (pred x)| \\
+    
+    first branch 
+    & \lstinline[language=Coq, basicstyle=\normalsize]|diag 0|
+    & \lstinline[language=Coq, basicstyle=\normalsize]|True| \\
+    
+    second branch 
+    & \lstinline[language=Coq, basicstyle=\normalsize]|diag (S (S k))|  
+    & \lstinline[language=Coq, basicstyle=\normalsize]|even k| \\
+\end{tabular}
+\end{center}
+%
+Note that the types in both columns are convertible, we just applied Coq's reduction rules to get the right-hand side column.
+%
+Looking at these type in order, we see first that the type of the whole match corresponds to the conclusion of the goal, making the whole proof term well-typed.
+%
+Then, we see that this return clause ``eliminates''the impossible branch \coqe{eO}: the type of this branch is the trivial return type \coqe{True} which is inhabited by \coqe{I}.
+%
+Finally, we see that the type of the second branch corresponds to the type of the hypothesis \coqe{Hk}, which allows the user to conclude the proof by filling the hole. 
+
+
+\paragraph{Contributions of the paper.} 
+In their inspiring paper, Monin and Shi~\cite{monin-shi} described the process of the creation of those diagonalization functions and state that: 
+\begin{quote}
+  \em ``[Their] goal is more modest: providing a hand-crafted inversion technique which is flexible enough for the user'' \end{quote} 
+%
+Indeed, what they provide is a general technique to craft inversions schemes by hand.  In this paper, we mechanize the construction of such diagonalization functions, yielding a new Coq tactic for inversion. 
+%
+Doing so, we identify a well-defined set of inversions problems that can be solved without introducing any equalities between terms (see \secref{}) making maximal use of the expressive power of the return clauses.
+%
+Then, we proceed to relax the restrictions we impose on inversions problems to tackle the general case of inversions. 
+
+\end{document}
+\verb!http://pages.cs.wisc.edu/~mulhern/Mul2010/paper.pdf!
+
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: t
+%%% End: 
