@@ -131,11 +131,15 @@ In their inspiring paper, Monin and Shi~\cite{monin-shi} described the process o
 \begin{quote}
   \em ``[Their] goal is more modest: providing a hand-crafted inversion technique which is flexible enough for the user'' \end{quote} 
 %
-Indeed, what they provide is a general technique to craft inversions schemes by hand.  In this paper, we mechanize the construction of such diagonalization functions, yielding a new Coq tactic for inversion. 
+Indeed, what they provide is a general technique to craft inversions schemes by hand.  In this paper, we mechanize the construction of such diagonalization functions, yielding a new Coq tactic for inversion called \coqe{invert}.
 %
-Doing so, we identify a well-defined set of inversions problems that can be solved without introducing any equalities between terms (see \secref{}) making maximal use of the expressive power of the return clauses.
+In the following, we first introduce some definitions and notations (see \secref{sec:preliminaries}). 
 %
-Then, we proceed to relax the restrictions we impose on inversions problems to tackle the general case of inversions. 
+Then, we identify a well-defined set of inversions problems that can be solved without introducing any equalities between terms making maximal use of the expressive power of the return clauses (see \secref{}).
+%
+Next, we proceed to relax the restrictions we impose on inversions problems to tackle the general case of the problem (see \secref{}). 
+%
+We propose an in-depth comparison of the behavior of our new \coqe{invert} tactic w.r.t. the existing elimination tactics of Coq.   
 
 \end{document}
 \verb!http://pages.cs.wisc.edu/~mulhern/Mul2010/paper.pdf!
