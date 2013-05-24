@@ -9,6 +9,8 @@
 \usepackage{stmaryrd}
 \usepackage{graphics}
 \usepackage{array}
+\usepackage{tikz}
+\usetikzlibrary{shapes}
 \bibliographystyle{plain}
 \pagestyle{plain}
 
@@ -56,7 +58,7 @@ contrived and big proof term. A concrete manifestation of this problem
 for the user is that the proof context becomes cluttered with
 seemingly useless equalities, that need to be substituted away by the
 user. The mantra \coqe{inversion H; clear H; subst} is both well-known
-and despised by long-time Coq users.
+and despised by long-time Coq hackers.
  
 Monin \cite{monin} described a new technique to build inversion
 principle that solves part of the problems of inversion. The idea is
@@ -99,7 +101,10 @@ of \coqe{List.length}), but it is not mandatory. In the most general
 case, the body part may depend arbitrarily on the type of the
 discriminee.
 %
-Applying Coq's typing rules for the dependent elimination, we get the following types \begin{center}
+Applying Coq's typing rules for the dependent elimination, we get the
+following types 
+%
+\begin{center}
   \begin{tabular}{l@{\quad}cc}
      & type & type (after reduction) \\
      \hline
@@ -117,13 +122,20 @@ Applying Coq's typing rules for the dependent elimination, we get the following 
 \end{tabular}
 \end{center}
 %
-Note that the types in both columns are convertible, we just applied Coq's reduction rules to get the right-hand side column.
+Note that the types in both columns are convertible, we just applied
+Coq's reduction rules to get the right-hand side column.
 %
-Looking at these type in order, we see first that the type of the whole match corresponds to the conclusion of the goal, making the whole proof term well-typed.
+Looking at these type in order, we see first that the type of the
+whole match corresponds to the conclusion of the goal, making the
+whole proof term well-typed.
 %
-Then, we see that this return clause ``eliminates''the impossible branch \coqe{eO}: the type of this branch is the trivial return type \coqe{True} which is inhabited by \coqe{I}.
+Then, we see that this return clause ``eliminates''the impossible
+branch \coqe{eO}: the type of this branch is the trivial return type
+\coqe{True} which is inhabited by \coqe{I}.
 %
-Finally, we see that the type of the second branch corresponds to the type of the hypothesis \coqe{Hk}, which allows the user to conclude the proof by filling the hole. 
+Finally, we see that the type of the second branch corresponds to the
+type of the hypothesis \coqe{Hk}, which allows the user to conclude
+the proof by filling the hole.
 
 
 \subsubsection{Contributions of the paper.} 
@@ -131,20 +143,24 @@ In their inspiring paper, Monin and Shi~\cite{monin-shi} described the
 process of the creation of those diagonalization functions and state
 that:
 \begin{quote}
-  \em ``[Their] goal is more modest: providing a hand-crafted inversion technique which is flexible enough for the user'' \end{quote} 
+  \em ``[Their] goal is more modest: providing a hand-crafted
+  inversion technique which is flexible enough for the
+  user'' \end{quote}
 %
 Indeed, what they provide is a general technique to craft inversions
 schemes by hand.  In this paper, we report on the mechanization of the
 construction of such diagonalization functions, yielding a new Coq
 tactic for inversion called \coqe{invert}.
 
-In the following of the paper, we first introduce some definitions and
-notations (see \secref{sec:preliminaries}).
+In the following of the paper, we first introduce some preliminary
+definitions and notations (see \secref{sec:preliminaries}); and we
+briefly recall how the current Coq inversion tactic works (see
+\secref{ssec:inversion}).
 %
 Then, we identify a well-defined set of inversions problems that can
 be solved without introducing any equalities between terms making
 maximal use of the expressive power of the return clauses (see
-\secref{}).
+\secref{sec:inversion-pattern}).
 %
 Then, we proceed to relax the restrictions we impose on inversions
 problems to tackle the general case of the problem (see \secref{}).
@@ -163,12 +179,16 @@ Coq proof assistant, but we argue that our work could be adapted to
 the context of other proof assistants based on type theory, such as
 Matita or Agda.
 
+\renewcommand\vector[1]{\overline{#1}} 
+
 First, we let $S$ range over sorts; that is, $S \in \set{\tt Prop,
   Set, Type_{i \in \mathbb{N}}}$ and the meta variable $t$ denote
-arbitrary Coq terms. 
-%
-% \renewcommand\vec[1]{\overrightarrow{#1}} 
-%
+arbitrary Coq terms. We use the shorthand notation $\forall \vector{x
+  : t},e$ to denote the sequence of quantifiers $\forall (x_1:t_1)
+... (x_n:t_n),e$ when the precise number of these quantifiers do not
+matter.
+
+
 A Coq inductive definition has the following most general form
 \begin{coq}
 Inductive name $(z_1: P_1) \dots (z_p: P_p)$ : forall $(a_1:A_1) \dots (a_n:A_n), S$ :=
@@ -182,7 +202,8 @@ $P_1;\dots;P_p$ and $n$ arguments $A_1; \dots;A_n$. We let $A$ denote
 the type
 %
 \coqe{forall $(a_1:A_1) \dots (a_n:A_n), S$}, which is called the
-arity of the inductive. We let $C_i$ denote the type of the $i$-th constructor $c_i$ of \coqe{name}
+arity of the inductive. We let $C_i$ denote the type of the $i$-th
+constructor $c_i$ of \coqe{name}
 %
 \begin{center}
   $C_i \eqdef$ \coqe{forall $(x^1: \alpha^1_i) \dots (x^{c_i} : \alpha^{c_i}_i)$, name $z_1 \dots z_p$ $t^1_i \dots t^n_i$}
@@ -203,9 +224,13 @@ follows, where the judgement $\Gamma \vdash e : \tau$ reads ``under
 typing context $\Gamma$, the expression $e$ has type $\tau$.
 
 \begin{mathpar}
-\inferrule*[right=$(\dagger)$]{\Gamma \vdash e : \texttt{name}~u_1\dots u_n \and 
-  \Gamma \vdash R : \forall (a_1:A_1) \dots (a_n:A_n) (H: \texttt{name}~a_1\dots a_n), S' 
-  \\ \Gamma \vdash f_i : \forall (x^1: \alpha^1_i) \dots (x^{c_i} : \alpha^{c_i}_i), R~t^1_i~\dots~t^n_i (c_i~t^1_i~\dots~t^n_i) \quad i \in \set{1,\dots,m}}
+\inferrule*[right=$(\dagger)$]{
+  \Gamma \vdash e : \texttt{name}~u_1\dots u_n \and 
+%
+  \Gamma \vdash R : \forall (a_1:A_1) \dots (a_n:A_n) (H: \texttt{name}~a_1\dots a_n), S'\\ 
+  % 
+  \Gamma \vdash f_i : \forall (x^1: \alpha^1_i) \dots (x^{c_i} : \alpha^{c_i}_i), R~t^1_i~\dots~t^n_i (c_i~t^1_i~\dots~t^n_i) \quad i \in \set{1,\dots,m}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 {\Gamma \vdash {\tt case}~R~e~(f_1,\dots,f_n) : R~u_1\dots u_n e} 
 \end{mathpar}
 
@@ -244,30 +269,20 @@ Again, after applying the reduction rules, we have
 Let's pause to remark that the typing rule $\dagger$ does not refine
 the typing context in the type of the branches. This is the cause of a
 frequent problem that we are going to illustrate on an (simplified)
-example.
+example coming from Chlipala's CPDT~\cite{cpdt}.
 
-  First, we define the inductive \coqe{fin n}, the type with
-\coqe{n} inhabitants.
 \begin{coq}
-Inductive fin : nat -> Type :=
-| F0 : forall {n}, fin (S n)  (* n is an implicit argument for F0 *)
-| FS : forall n, fin n -> fin (S n).
+Lemma lt_0_0 : 0 < 0 -> False := lt_n_0 0. 
+Fail Definition pred (n : nat) (H: 0 < n) : nat :=
+match n with 
+| 0 => match lt_0_0 H in False return nat with end  (* elimination of False *)
+| S n => n
+end. 
 \end{coq}
-Then, we may try to define the less-or-equal test between two
-inhabitants of a given \coqe{fin n}.
-\begin{coq}
-Fixpoint leb n f1 f2 : bool :=
-match f1 as _ in fin m return bool with 
-  | F0 => true  
-  | FS m1 f1' => match f2  with | F0 => false | FS m2 f2' => leb m1 f1' f2' end 
-end. (* ill-typed! *)
-\end{coq}
-At this point, Coq complains that the term \coqe{leb _ f1' f2'} is
-ill-typed. Indeed, \coqe{f1'} has type \coqe{fin m1} and \coqe{f2'}
-has type \coqe{fin m2}. What happens here is that the equality between
-\coqe{m1} and \coqe{m2} is not preserved: indeed, the typing rule
-$\dagger$ does not modify the typing of the variables that occur in
-the context.
+At this point, Coq complains that the term \coqe{lt_0_0 H} is
+ill-typed. Indeed, \coqe{H} has type \coqe{0 < n}. What happens here
+is that the typing rule $(\dagger)$ does not modify the typing of the
+variables (here \coqe{H}) that occur in the typing context.
 
 A solution to this problem is the pattern known as \emph{commutative
   cuts}. The idea is to refine the type of a variable that occurs in
@@ -275,21 +290,126 @@ the context, by generalizing its type in the return clause, and
 introducing an extra-abstraction in each branches of the match. In the
 example above, the code becomes
 \begin{coq}
-Fixpoint leb n f1 f2 : bool :=
-match f1 as _ in  fin m return fin m -> bool with 
-| F0 => fun _  => true  
-| FS m1 f1' => fun (f2 : fin m1 ) => 
-             match f2 in fin (S m') return fin m' -> bool 
-             with | F0 => fun _ => false | FS m2 f2' => fun f1' => leb _ f1' f2' end f1'
-end f2.
+Definition pred (n : nat) (H: 0 < n) : nat :=
+match n as m in nat return 0 < m -> nat with 
+| 0 => fun (H : 0 < 0) => match lt_0_0 H in False return nat with end 
+| S p => fun (_: 0 < S p) => p
+end H. 
 \end{coq}
-where we interleave two commutative cuts!  \marginpar{This example is
-  not really good, since Coq infers part of the return clause for the
-  inner match}
+where we interleave the elimination of the inductive and the
+introduction of abstractions in the branches. 
 
+Commutative cut are casual when writing dependent eliminations, and
+find another use case when one needs to preserve the value of the
+arguments of the inductive inside the branches of the match.
+\marginpar{Put an example!}
 
-\section{Inversion}
+\subsection{Inversion seen as logic programming}\label{ssec:inversion}
+The current inversion tactic of Coq was implemented by
+Cornes~\cite{cornes}, improving some earlier work by C. Murthy. The
+underlying idea is quite simple: given an inductive predicate
+\coqe{I}, generate an inversion lemma of the form
+\begin{displaymath}
+  \texttt{inv\_lemma} : \forall \vector{x:t}, \forall (e: I~\vector{x}), {\tt pred}~\vector{x}
+\end{displaymath}
+where \texttt{pred} expresses the constraint that $\vector{x}$ must
+meet for \coqe{I $\vector{x}$} to hold. Typically, this predicate
+introduces new variables, and relate the value of these w.r.t. the
+arguments $\vector{x}$ using a set of equations. Let's consider the
+following example, a definition of the less-or-equal relation.
+\begin{coq}
+Inductive le : nat -> nat -> Prop :=
+  le0 : forall n, le 0 n
+| leS : forall n m, le n m -> le (S n) (S m).
+\end{coq}
+%
+Then, to perform an inversion over an hypothesis of the form %
+\coqe{le (S n) m}, one can generate (and prove) the following lemma:
+\begin{coq}
+Lemma inv_lemma n m (H : le n m) : match n with 
+                                   | 0 => True
+                                   | S n' => exists m', m = S m' /\ le n' m' 
+                                   end. 
+\end{coq}
+Fortunately, the equation \coqe{m = S m'} does not fall in the
+category of the ``useless equations generated by \coqe{inversion} and
+that need to be substituted by \coqe{subst}''.
+%
+Yet, in a more general context, the algorithm based on logic
+programming that generates the inversion lemmas follows a simple
+strategy that is likely to clutter the proof context with redundant
+equations.
+%
+Moreover, the proof term that are generated for these inversion lemmas
+are quite big. Since these proof terms are inlined at the call sites
+of the \coqe{inversion} tactic, this yields the efficiency issues that
+we mentionned in the introduction. 
 
+\section{Inversions without equations}\label{sec:inversion-pattern}
+In this section, we identify a subset of inversions problems that can
+be solved without introducing equations; and we demonstrate how to
+solve them using diagonalization functions.
+
+First, we consider a restricted form of Coq terms with a
+\emph{pattern} structure\footnote{that is, terms built recursively using
+variables and constructors; not to be confounded with patterns as in ``pattern matching''}
+\begin{center}
+  \begin{tabular}{ccl@{\quad}l}
+    $p$ & ::=& &  {\bf patterns} \\
+    & & $x$ & variable \\
+    & & $c~\vector{p}$ & constructor pattern
+  \end{tabular}
+\end{center}
+%
+The class of inductive definitions that are used in this section share
+the following properties:
+%
+\begin{itemize}
+\item First, the conclusion of each constructor of the inductive must
+  be \emph{patterns}: that is, the terms $t$ in each application ${\tt
+    name}~\vector{t}$ must be patterns. 
+\item Second, the variables in these $\vector{t}$ must occur only once. 
+\end{itemize}
+
+\newcommand\subst[3]{#1 \left[ #2 \leftarrow #3 \right]}
+\begin{figure}
+  \centering
+  \tikzstyle{mybox} = [draw=red, fill=black!5, very thick,
+    rectangle, rounded corners, inner sep=5pt, inner ysep=5pt, node distance=3cm]
+    \begin{tikzpicture}
+      \node[mybox](1){%
+        \begin{tabular}{c}
+          $ \tt v :: q$ \\
+          $\tt \forall (x:t_x), ret$ \\
+          $\tt concl$
+        \end{tabular}        
+      };
+      \node (2) [right of=1]{%
+        \begin{tabular}{c}
+        $\tt fun (x:t_x) \Rightarrow $ \\
+        \begin{tikzpicture}
+          \node[mybox](1){%
+            \begin{tabular}{c}
+              $ \tt q$ \\
+              $\tt \subst{ret}{x}{v}$ \\
+              $\tt \subst{concl}{x}{v}$
+            \end{tabular}        
+          };
+        \end{tikzpicture}
+      \end{tabular}
+
+      };
+    \end{tikzpicture}
+  \caption{Diagonalization algorithm}
+\end{figure}
+\section{Related works}
+\begin{itemize}
+\item Investigate to what extent this ``pattern linear'' class matches
+  something in Conor's paper.
+\item Monin
+\item Cornes
+\item Reationship with the typing of GADTs in OCaml
+\end{itemize}
 
 \end{document}
 \verb!http://pages.cs.wisc.edu/~mulhern/Mul2010/paper.pdf!
