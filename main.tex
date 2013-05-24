@@ -126,20 +126,170 @@ Then, we see that this return clause ``eliminates''the impossible branch \coqe{e
 Finally, we see that the type of the second branch corresponds to the type of the hypothesis \coqe{Hk}, which allows the user to conclude the proof by filling the hole. 
 
 
-\paragraph{Contributions of the paper.} 
-In their inspiring paper, Monin and Shi~\cite{monin-shi} described the process of the creation of those diagonalization functions and state that: 
+\subsubsection{Contributions of the paper.} 
+In their inspiring paper, Monin and Shi~\cite{monin-shi} described the
+process of the creation of those diagonalization functions and state
+that:
 \begin{quote}
   \em ``[Their] goal is more modest: providing a hand-crafted inversion technique which is flexible enough for the user'' \end{quote} 
 %
-Indeed, what they provide is a general technique to craft inversions schemes by hand.  In this paper, we mechanize the construction of such diagonalization functions, yielding a new Coq tactic for inversion called \coqe{invert}.
+Indeed, what they provide is a general technique to craft inversions
+schemes by hand.  In this paper, we report on the mechanization of the
+construction of such diagonalization functions, yielding a new Coq
+tactic for inversion called \coqe{invert}.
+
+In the following of the paper, we first introduce some definitions and
+notations (see \secref{sec:preliminaries}).
 %
-In the following, we first introduce some definitions and notations (see \secref{sec:preliminaries}). 
+Then, we identify a well-defined set of inversions problems that can
+be solved without introducing any equalities between terms making
+maximal use of the expressive power of the return clauses (see
+\secref{}).
 %
-Then, we identify a well-defined set of inversions problems that can be solved without introducing any equalities between terms making maximal use of the expressive power of the return clauses (see \secref{}).
+Then, we proceed to relax the restrictions we impose on inversions
+problems to tackle the general case of the problem (see \secref{}).
 %
-Next, we proceed to relax the restrictions we impose on inversions problems to tackle the general case of the problem (see \secref{}). 
+Then, we propose a comparison of the behavior of our new \coqe{invert}
+tactic w.r.t. the existing elimination tactics of Coq; and evaluate
+its usefulness on practical examples (see \secref{}).
 %
-We propose an in-depth comparison of the behavior of our new \coqe{invert} tactic w.r.t. the existing elimination tactics of Coq.   
+Finally, we conclude with a comparison with related works and some
+perspectives. 
+
+\section{Preliminaries}\label{sec:preliminaries}
+In this section, we define the notations and vocabulary we shall use
+through the rest of the paper. Here, we settle in the context of the
+Coq proof assistant, but we argue that our work could be adapted to
+the context of other proof assistants based on type theory, such as
+Matita or Agda.
+
+First, we let $S$ range over sorts; that is, $S \in \set{\tt Prop,
+  Set, Type_{i \in \mathbb{N}}}$ and the meta variable $t$ denote
+arbitrary Coq terms. 
+%
+% \renewcommand\vec[1]{\overrightarrow{#1}} 
+%
+A Coq inductive definition has the following most general form
+\begin{coq}
+Inductive name $(z_1: P_1) \dots (z_p: P_p)$ : forall $(a_1:A_1) \dots (a_n:A_n), S$ :=
+| $c_1$ : forall $(x^1: \alpha^1_1) \dots (x^{c_1} : \alpha^{c_1}_1)$, name $z_1 \dots z_p$ $t^1_1 \dots t^n_1$
+$\vdots$
+| $c_m$ : forall $(x^1: \alpha^1_m) \dots (x^{c_m} : \alpha^{c_m}_m)$, name $z_1 \dots z_p$ $t^1_m \dots t^n_m$
+\end{coq}
+%
+First, the inductive definition \coqe{name} has $p$ parameters
+$P_1;\dots;P_p$ and $n$ arguments $A_1; \dots;A_n$. We let $A$ denote
+the type
+%
+\coqe{forall $(a_1:A_1) \dots (a_n:A_n), S$}, which is called the
+arity of the inductive. We let $C_i$ denote the type of the $i$-th constructor $c_i$ of \coqe{name}
+%
+\begin{center}
+  $C_i \eqdef$ \coqe{forall $(x^1: \alpha^1_i) \dots (x^{c_i} : \alpha^{c_i}_i)$, name $z_1 \dots z_p$ $t^1_i \dots t^n_i$}
+\end{center}
+where each $t_i^k$ has type $A_k$.
+%
+(For the sake of simplicity, we will only consider inductive without
+parameters in the following; yet, our algorithms and tactic extend to
+the general case.)
+
+Then, we turn to the elimination of these inductives definitions.
+Internally, Coq represents a \coqe{match} construct using a more
+primitive \coqe{case} construct that takes as arguments the term that
+is eliminated $e$, a return clause $R$ and one function $f_i$ per
+constructor $c_i$ of the inductive (each $f_i$ corresponds to a
+\emph{branch} of the case construct).  The typing rule is expressed as
+follows, where the judgement $\Gamma \vdash e : \tau$ reads ``under
+typing context $\Gamma$, the expression $e$ has type $\tau$.
+
+\begin{mathpar}
+\inferrule*[right=$(\dagger)$]{\Gamma \vdash e : \texttt{name}~u_1\dots u_n \and 
+  \Gamma \vdash R : \forall (a_1:A_1) \dots (a_n:A_n) (H: \texttt{name}~a_1\dots a_n), S' 
+  \\ \Gamma \vdash f_i : \forall (x^1: \alpha^1_i) \dots (x^{c_i} : \alpha^{c_i}_i), R~t^1_i~\dots~t^n_i (c_i~t^1_i~\dots~t^n_i) \quad i \in \set{1,\dots,m}}
+{\Gamma \vdash {\tt case}~R~e~(f_1,\dots,f_n) : R~u_1\dots u_n e} 
+\end{mathpar}
+
+
+(Remark that the sole differences w.r.t. the (user-level) \coqe{match}
+syntax are that:
+%
+(1) the return clause summarizes the \coqe{as ... in ... return ...}
+part of the \coqe{match};
+%
+(2) there is no implicit binders for the arguments of the constructors
+in the branches.)
+
+\newcommand\figref[1]{Fig.\ref{#1}}
+
+Let's take an example to clarify these notations. The various elements
+of the \coqe{case} construct that corresponds to the \coqe{match} on
+the right-hand side of \figref{fig:proof-term} are defined as follows:
+\begin{center}
+  \begin{tabular}{c@{$\quad\eqdef\quad$}l}
+    $e$ & \lstinline[language=Coq, basicstyle=\normalsize]|H| \\
+    $R$ & \lstinline[language=Coq, basicstyle=\normalsize]|fun (n' : nat) (H' : even n') => diag n'| \\
+    $f_1$ & \lstinline[language=Coq, basicstyle=\normalsize]|I : R 0 eO| \\
+    $f_2$ & \lstinline[language=Coq, basicstyle=\normalsize]|fun (k: nat) (Hk: even k) => (_ : R (S (S k)) (eSS k Hk))|
+  \end{tabular}
+\end{center}
+Again, after applying the reduction rules, we have 
+\begin{center}
+  \begin{tabular}{c@{$\quad\equiv\quad$}l}
+    $f_1$ & \lstinline[language=Coq, basicstyle=\normalsize]|I : True| \\
+    $f_2$ & \lstinline[language=Coq, basicstyle=\normalsize]|fun (k: nat) (Hk: even k) => (_ : even k)|
+  \end{tabular}
+\end{center}
+
+\subsubsection{Commutative cuts.}
+Let's pause to remark that the typing rule $\dagger$ does not refine
+the typing context in the type of the branches. This is the cause of a
+frequent problem that we are going to illustrate on an (simplified)
+example.
+
+  First, we define the inductive \coqe{fin n}, the type with
+\coqe{n} inhabitants.
+\begin{coq}
+Inductive fin : nat -> Type :=
+| F0 : forall {n}, fin (S n)  (* n is an implicit argument for F0 *)
+| FS : forall n, fin n -> fin (S n).
+\end{coq}
+Then, we may try to define the less-or-equal test between two
+inhabitants of a given \coqe{fin n}.
+\begin{coq}
+Fixpoint leb n f1 f2 : bool :=
+match f1 as _ in fin m return bool with 
+  | F0 => true  
+  | FS m1 f1' => match f2  with | F0 => false | FS m2 f2' => leb m1 f1' f2' end 
+end. (* ill-typed! *)
+\end{coq}
+At this point, Coq complains that the term \coqe{leb _ f1' f2'} is
+ill-typed. Indeed, \coqe{f1'} has type \coqe{fin m1} and \coqe{f2'}
+has type \coqe{fin m2}. What happens here is that the equality between
+\coqe{m1} and \coqe{m2} is not preserved: indeed, the typing rule
+$\dagger$ does not modify the typing of the variables that occur in
+the context.
+
+A solution to this problem is the pattern known as \emph{commutative
+  cuts}. The idea is to refine the type of a variable that occurs in
+the context, by generalizing its type in the return clause, and
+introducing an extra-abstraction in each branches of the match. In the
+example above, the code becomes
+\begin{coq}
+Fixpoint leb n f1 f2 : bool :=
+match f1 as _ in  fin m return fin m -> bool with 
+| F0 => fun _  => true  
+| FS m1 f1' => fun (f2 : fin m1 ) => 
+             match f2 in fin (S m') return fin m' -> bool 
+             with | F0 => fun _ => false | FS m2 f2' => fun f1' => leb _ f1' f2' end f1'
+end f2.
+\end{coq}
+where we interleave two commutative cuts!  \marginpar{This example is
+  not really good, since Coq infers part of the return clause for the
+  inner match}
+
+
+\section{Inversion}
+
 
 \end{document}
 \verb!http://pages.cs.wisc.edu/~mulhern/Mul2010/paper.pdf!
