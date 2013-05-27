@@ -10,7 +10,7 @@
 \usepackage{graphics}
 \usepackage{array}
 \usepackage{tikz}
-\usetikzlibrary{shapes}
+\usetikzlibrary{shapes, positioning,fit}
 \bibliographystyle{plain}
 \pagestyle{plain}
 
@@ -163,8 +163,8 @@ maximal use of the expressive power of the return clauses (see
 \secref{sec:inversion-pattern}).
 %
 Then, we proceed to relax the restrictions we impose on inversions
-problems to tackle the general case of the problem (see \secref{}).
-%
+problems to tackle the general case of the problem (see \secref{}).%
+
 Then, we propose a comparison of the behavior of our new \coqe{invert}
 tactic w.r.t. the existing elimination tactics of Coq; and evaluate
 its usefulness on practical examples (see \secref{}).
@@ -198,8 +198,8 @@ $\vdots$
 \end{coq}
 %
 First, the inductive definition \coqe{name} has $p$ parameters
-$P_1;\dots;P_p$ and $n$ arguments $A_1; \dots;A_n$. We let $A$ denote
-the type
+$P_1;\dots;P_p$ and $n$ arguments $A_1; \dots;A_n$. We let $arity({\tt name})$
+denote the type
 %
 \coqe{forall $(a_1:A_1) \dots (a_n:A_n), S$}, which is called the
 arity of the inductive. We let $C_i$ denote the type of the $i$-th
@@ -231,7 +231,7 @@ typing context $\Gamma$, the expression $e$ has type $\tau$.
   % 
   \Gamma \vdash f_i : \forall (x^1: \alpha^1_i) \dots (x^{c_i} : \alpha^{c_i}_i), R~t^1_i~\dots~t^n_i (c_i~t^1_i~\dots~t^n_i) \quad i \in \set{1,\dots,m}}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-{\Gamma \vdash {\tt case}~R~e~(f_1,\dots,f_n) : R~u_1\dots u_n e} 
+{\Gamma \vdash {\tt case}~e~{\tt return}~R~{\tt with}~(f_1,\dots,f_n) : R~u_1\dots u_n e} 
 \end{mathpar}
 
 
@@ -308,12 +308,12 @@ arguments of the inductive inside the branches of the match.
 The current inversion tactic of Coq was implemented by
 Cornes~\cite{cornes}, improving some earlier work by C. Murthy. The
 underlying idea is quite simple: given an inductive predicate
-\coqe{I}, generate an inversion lemma of the form
+\coqe{Ind}, generate an inversion lemma of the form
 \begin{displaymath}
-  \texttt{inv\_lemma} : \forall \vector{x:t}, \forall (e: I~\vector{x}), {\tt pred}~\vector{x}
+  \texttt{inv\_lemma} : \forall \vector{x:t}, \forall (e: {\tt Ind}~\vector{x}), {\tt pred}~\vector{x}
 \end{displaymath}
 where \texttt{pred} expresses the constraint that $\vector{x}$ must
-meet for \coqe{I $\vector{x}$} to hold. Typically, this predicate
+meet for \coqe{Ind $\vector{x}$} to hold. Typically, this predicate
 introduces new variables, and relate the value of these w.r.t. the
 arguments $\vector{x}$ using a set of equations. Let's consider the
 following example, a definition of the less-or-equal relation.
@@ -356,52 +356,162 @@ variables and constructors; not to be confounded with patterns as in ``pattern m
 \begin{center}
   \begin{tabular}{ccl@{\quad}l}
     $p$ & ::=& &  {\bf patterns} \\
-    & & $x$ & variable \\
+    & & $x,y$ & variable \\
     & & $c~\vector{p}$ & constructor pattern
   \end{tabular}
 \end{center}
 %
-The class of inductive definitions that are used in this section share
-the following properties:
-%
-\begin{itemize}
-\item First, the conclusion of each constructor of the inductive must
-  be \emph{patterns}: that is, the terms $t$ in each application ${\tt
-    name}~\vector{t}$ must be patterns. 
-\item Second, the variables in these $\vector{t}$ must occur only once. 
-\end{itemize}
+First, the class of inductive definitions that are used in this
+section share the properties that the conclusion of each constructor
+of the inductive must be \emph{patterns}: that is, the terms $t$ in
+each application ${\tt name}~\vector{t}$ must be patterns.
 
 \newcommand\subst[3]{#1 \left[ #2 \leftarrow #3 \right]}
-\begin{figure}
-  \centering
-  \tikzstyle{mybox} = [draw=red, fill=black!5, very thick,
-    rectangle, rounded corners, inner sep=5pt, inner ysep=5pt, node distance=3cm]
-    \begin{tikzpicture}
-      \node[mybox](1){%
-        \begin{tabular}{c}
-          $ \tt v :: q$ \\
-          $\tt \forall (x:t_x), ret$ \\
-          $\tt concl$
-        \end{tabular}        
-      };
-      \node (2) [right of=1]{%
-        \begin{tabular}{c}
-        $\tt fun (x:t_x) \Rightarrow $ \\
-        \begin{tikzpicture}
-          \node[mybox](1){%
-            \begin{tabular}{c}
-              $ \tt q$ \\
-              $\tt \subst{ret}{x}{v}$ \\
-              $\tt \subst{concl}{x}{v}$
-            \end{tabular}        
-          };
-        \end{tikzpicture}
-      \end{tabular}
+\newcommand{\mkterm}[5][]{
+  \node[term,#1](#2){\begin{tabular}{c}#3\\#4\\#5\end{tabular}};}   
+\newcommand{\mkclause}[4][]{
+  \node[clause,#1](#2){\begin{tabular}{c@{,}c}#3 & #4 \end{tabular}};}   
 
+\tikzstyle{term} = [draw=red, very thick, rectangle, rounded corners, inner sep=4pt, inner ysep=4pt, node distance=1cm, solid]
+
+\tikzstyle{clause} = [draw=black, very thick, rounded rectangle, inner sep=4pt, inner ysep=4pt, solid]
+% rounded rectangle west arc=none,
+
+\tikzstyle{code} = [draw=none]
+
+\begin{figure}[t]
+  \begin{multicols}{2}
+    \begin{tikzpicture}
+      \mkterm{empty-left}{$ \tt []$}{$\tt ty$}{$\tt concl $}
+    % 
+      \node [right=0.0cm of empty-left] (arrow){$\Rightarrow$};
+    % 
+      \node[term, dashed, right=0.0cm of arrow] (empty-right){%
+        {$\tt concl $} };
+      % inferrule style
+      \node[draw=none, fit=(empty-left) (empty-right)](bb-bottom){};
+      
+      \draw [thick] (bb-bottom.north west) -- (bb-bottom.north east) node[right] {\sc Emp};
+    \end{tikzpicture}
+    \begin{tikzpicture}
+      \mkterm{var-left}{$ \tt y :: q$}{$\tt \forall (x:t_x),
+        ty$}{$\tt concl$}
+    % 
+      \node [right=0.0cm of var-left] (arrow){$\Rightarrow$};
+    % 
+      \node[term, dashed, right=0.0cm of arrow] (var-right){%
+        \begin{tikzpicture}
+          \node[code](bout){$\tt fun~(x:t_x) \Rightarrow $};
+          \mkterm[right=0.0cm of bout]{}{$ \tt q$}{$\tt
+            \subst{ty}{x}{y}$}%
+          {$\tt \subst{concl}{x}{y}$}
+        \end{tikzpicture}
+      };
+    
+      % inferrule style
+      \node[draw=none, fit=(var-left) (var-right)](bb-bottom){}; \draw
+      [thick] (bb-bottom.north west) -- (bb-bottom.north east)
+      node[right] {\sc Var};
+    \end{tikzpicture}
+  \end{multicols}
+  % \newcommand{\highlight}[1]{%
+  %   \tikz[baseline,anchor=base]{
+  %     \node[text centered, anchor=text,
+  %     text height=1.5ex, 
+  %     inner sep=2pt, rectangle, draw=black, sharp corners, solid, fill=black!10 ] {#1};
+  %   }
+  % }
+
+  \newcommand{\highlight}[1]{#1}
+  \begin{center}
+    \begin{tikzpicture}
+      \mkterm{constr-left}%
+      {$\tt c~\vector{p}::q$}%
+      {$\tt \forall (x:t_x), ty$}%
+      {$\tt concl$}
+    % 
+      \node [right=0.0cm of constr-left] (arrow){$\Rightarrow$};
+    % 
+      \node[term,dashed, right=0.0cm of arrow] (constr-right){%
+        \begin{tikzpicture}
+          \node[code](lambda){$\tt fun~(x:t_x) \Rightarrow $};
+          \node[code, right=0.0cm of lambda](header){$\tt
+            case~x~return~\highlight{clause}~with$};
+        
+          \node[matrix, below=0.0cm of header.west, anchor=north
+          west](branches) { \node[code]{$| {\tt c} \Rightarrow$}; &
+            \mkterm{body}{$\tt \vector{p}~@~args~@~q$}{$\forall (\vector{x}:\vector{\alpha}), {\tt clause}$}{$\tt concl$} \\
+            \node[code]{$| \_ \Rightarrow $}; &
+            \node[code]{$\tt I$}; \\
+          }; \node[draw=none, below=-0.4cm of branches.south west,
+          anchor=north west]{ $\tt end~\highlight{args}$};
+        \end{tikzpicture}
+      }; \node[draw=none, fit=(constr-left)
+      (constr-right)](bb-bottom){}; \draw [thick] (bb-bottom.north
+      west) -- (bb-bottom.north east) node[right] {\sc Constr};
+      % the premises of the inference rule
+      \node[matrix, above=0.0cm of bb-bottom.north]  { 
+        \mkclause[anchor=center]{}{$\tt t_x$}{$\tt ty$} & 
+        \node [anchor=center] {$\Rightarrow$}; & 
+        \node[clause, anchor=center, dashed] {$\tt clause, args$}; \\
       };
     \end{tikzpicture}
-  \caption{Diagonalization algorithm}
+  \end{center}
+  \caption{Diagonalization algorithm (building cases)}\label{fig:mkterm}   
 \end{figure}
+
+\begin{figure}[t]
+  \centering  
+  \begin{tikzpicture}
+    \node[matrix, align=center](concl){ 
+      \mkclause [anchor=center]{}{$\tt Ind~\vector{a}$}{$\tt ty$} &
+      \node [anchor=center] (arrow) {$\Rightarrow$};  &
+      \mkclause[anchor=center,dashed]{}{$\tt clause$}{$\tt args$} \\      
+    };
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    \node(premises)[matrix, above=0.0cm of concl.north, align=center ]{
+      \node [anchor=center](prepare) {$\tt args, ty' \eqdef$ \sc make-commutative-cuts($\tt \vector{a}, ty$)}; &       
+      \node [draw=none, minimum width=1cm]{};
+      &
+      \mkterm[anchor=center]{foobar}{$\tt \vector{a}$}{$arity({\tt Ind})$}{ty'} & 
+      \node [anchor=center] (arrow) {$\Rightarrow$};  &      
+      \node [term,anchor=center, dashed](clause) {$\tt clause$}; &  \\
+    };
+    \draw [thick] (premises.south west) -- (premises.south east) node[right] {\sc Ind};    
+  \end{tikzpicture}
+  \caption{Diagonalization algorithm (building return clauses)}\label{fig:mkclause}
+\end{figure}
+
+The construction of the diagonalizer for a given inversion problem
+interleaves three basic procedures. In the following, we describe
+these procedures using block diagrams and inference rules; and we take
+the convention that plain boxes correspond to procedure calls and
+dashed boxes encapsulate the corresponding results.
+
+The first procedure is called {\tt mkterm}; it is described in
+\figref{fig:mkterm} and is used to build a cascade of \coqe{case}
+constructs. 
+%
+It takes as arguments a list of patterns $l$, a type $\tt ty$, and a Coq term $\tt concl$.
+%
+In an initial call to {\tt mkterm}, this list of pattern corresponds
+to the arguments of inductive that is inverted; the type corresponds
+to the arity of the inductive that is inverted; and the term $\tt
+concl$ correspond to the conclusion of the goal. (Intuitively, the
+list of pattern and the types could be zipped together, but it would
+make for less idiomatic data structures when it comes to the real
+implementation.)
+
+The first interesting case is when the list of patterns starts with a
+variable (rule {\sc Var}): in that case, we generalize this variable
+in both the conclusion and the return clause.
+
+The second interesting case is when the list of patterns starts with a
+constructor {\tt c} applied to a list of patterns ${\tt \vector{p}}$.
+%
+The variable {\tt x} corresponds to the generalization of this
+argument and we use a suitable elimination
+
 \section{Related works}
 \begin{itemize}
 \item Investigate to what extent this ``pattern linear'' class matches
@@ -409,6 +519,8 @@ the following properties:
 \item Monin
 \item Cornes
 \item Reationship with the typing of GADTs in OCaml
+\item Adam state that inferring the return clauses in match is not
+  decidable. Why are we that efficient here ?
 \end{itemize}
 
 \end{document}
